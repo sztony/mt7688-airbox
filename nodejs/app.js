@@ -1,11 +1,8 @@
 //
-// RS485 Modbus RTU Control for Taiwan Hitachi Air Conditioner
-// RESTful web services server.
-// 
+// AirBox on MT7688
+//
 // To enable ECMAScript 2015 features, use the following command to run:
 //   node --harmony app.js
-//
-// Put app.js and index.html file in /root/index.html
 //
 // Author: Yu-Hua Chang
 //
@@ -19,7 +16,37 @@ const HTTP_PORT = 8080;
 const http = require('http');
 const url = require('url');
 const SerialPort = require("serialport").SerialPort;
-const fs = require('fs');
+
+////////////////////////////////////////////////////////////////////////////////
+// sensor values
+let sensors = {
+  "humidity": undefined,
+  "temperature": undefined,
+  "pmat25": undefined,
+  "ppm": undefined
+};
+
+// settings
+let settings = {
+  "air_conditioner_addr": "http://192.168.1.116:8080",
+  "dehumidifier_addr": undefined
+};
+
+// high low rule settings
+let highLowRules = [
+  {
+    "sensor": "temperature",
+    "high_value": 28,
+    "low_value": 24,
+    "target": "air_conditioner_addr"
+  },
+  {
+    "sensor": "humidity",
+    "high_value": 65,
+    "low_value": 55,
+    "target": "dehumidifier_addr"
+  }
+];
 
 ////////////////////////////////////////////////////////////////////////////////
 // open serial port to MCU
@@ -32,7 +59,7 @@ serial.on('error', (err) => {
 })
 
 ////////////////////////////////////////////////////////////////////////////////
-// http server to server the static pages
+// RESTful web services
 const server = http.createServer((request, response) => {
 
   // retrieve request header, method, url, and body.
@@ -48,100 +75,69 @@ const server = http.createServer((request, response) => {
     body = Buffer.concat(body).toString();
 
     // prepare the information we need.
-    let slave_addr = undefined;
-    let function_code = undefined;
-    let register_addr = undefined;
-    let register_value = undefined;
+    let resourceType = undefined;
 
     // retrieve slave address and target register address from url
     let req = request.url.split('/');
-    if (req.length == 3) {
-      slave_addr = parseInt(req[1], 16);
-      register_addr = parseInt(req[2], 16);
+    if (req.length == 2) {
+      resourceType = req[1].trim();
     }
 
-    // determine function by request method.
-    if (request.method === 'GET') {
-
-      // read holding register
-      function_code = 0x03;
-
-    } else if (request.method === 'PUT') {
-
-      // write single register
-      function_code = 0x06;
-
-      // if method is PUT, read register value from request body.
-      let json = JSON.parse(body);
-      register_value = json.value;
-    }
-
-    if (slave_addr !== undefined && function_code !== undefined && register_addr !== undefined) {
-      // service RESTful web services.
-
-      // prepare the binary data to be sent to MCU.
-      let buffer = new Buffer(4);
-      buffer[0] = slave_addr;
-      buffer[1] = function_code;
-      buffer[2] = register_addr;
-      buffer[3] = register_value === undefined ? 0x00 : register_value;
-
-      console.log('slave_addr: 0x%s function_code: 0x%s register_addr: 0x%s register_value: 0x%s',
-          buffer[0].toString(16), buffer[1].toString(16), buffer[2].toString(16), buffer[3].toString(16));
-
-      // remember if MCU has responsed already.
-      let hasResponsed = false;
-
-      // send to MCU
-      serial.write(buffer, (err) => {
-        if (err) {
-          return console.log('Error on write: ', err.message);
-        }
-        console.log('packet sent.');
-      });
-
-      // process the response from MCU
-      serial.on('data', (data) => {
-
-        // collect response value as ascii string.
-        // if reading register success, the return value will be an integer (as ascii string)
-        // and is empty string if it failed.
-        // if writeing register success, the return value will be zero (as ascii string)
-        // and any non-zero value if failed.
-        let value = '';
-        for (let i = 0; i < data.length; i++) {
-          if (data[i] >= '0'.charCodeAt(0) && data[i] <= '9'.charCodeAt(0)) {
-            value += String.fromCharCode(data[i]);
-          }
-        }
-
-        // return the first response only since MCU may return more than once.
-        if (!hasResponsed) {
-          console.log('data received:', value);
-          response.writeHead(200, {'Content-Type': 'application/json'});
-          response.write('{ "value": ' + value + ' }');
-          response.end();
-          hasResponsed = true;
-        }
-      });
+    let notFound = false;
+    if (resourceType === undefined) {
+      notFound = true;
     } else {
 
-      // Get path name on the server's file system.
-      let filename = '/root/index.html';
+      // determine function by request method.
+      if (request.method === 'GET') {
+        console.log('read resource ' + resourceType);
 
-      fs.exists(filename, (exists) => {
-        if (exists) {
-          // server static web content for quick test
-          response.writeHead(200, 'text/html');
-          let fileStream = fs.createReadStream(filename);
-          fileStream.pipe(response);
-        } else {
-          // no resource found and no static web content
-          response.writeHead(404, {'Content-Type': 'text/plain'});
-          response.write('404 Not Found\n');
+        // return resource value
+        if (resourceType === 'sensors') {
+          response.setHeader("Access-Control-Allow-Origin", "*");
+          response.writeHead(200, {'Content-Type': 'application/json'});
+          response.write(JSON.stringify(sensors));
           response.end();
+        } else if (resourceType === 'settings') {
+          response.setHeader("Access-Control-Allow-Origin", "*");
+          response.writeHead(200, {'Content-Type': 'application/json'});
+          response.write(JSON.stringify(settings));
+          response.end();
+        } else if (resourceType === 'highlow') {
+          response.setHeader("Access-Control-Allow-Origin", "*");
+          response.writeHead(200, {'Content-Type': 'application/json'});
+          response.write(JSON.stringify(highLowRules));
+          response.end();
+        } else {
+          notFound = true;
         }
-      });
+      } else if (request.method === 'PUT') {
+        console.log('write resource ' + resourceType);
+
+        // write resource value
+        if (resourceType === 'settings') {
+          settings = JSON.parse(body);
+          response.setHeader("Access-Control-Allow-Origin", "*");
+          response.writeHead(200, {'Content-Type': 'application/json'});
+          response.write(JSON.stringify(settings));
+          response.end();
+        } else if (resourceType === 'highlow') {
+          highLowRules = JSON.parse(body);
+          response.setHeader("Access-Control-Allow-Origin", "*");
+          response.writeHead(200, {'Content-Type': 'application/json'});
+          response.write(JSON.stringify(highLowRules));
+          response.end();
+        } else {
+          notFound = true;
+        }
+      }
+    }
+    
+    if (notFound) {
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.writeHead(404, {'Content-Type': 'text/plain'});
+      response.write('404 Not Found\n');
+      response.end();
     }
   });
 });
@@ -160,3 +156,32 @@ serial.on('open', (err) => {
     console.log("%s HTTP Server listening on %s", new Date(), HTTP_PORT);
   });
 });
+
+////////////////////////////////////////////////////////////////////////////////
+// process the response from MCU
+serial.on('data', (data) => {
+  
+  // let value = '';
+  // for (let i = 0; i < data.length; i++) {
+  //   value += String.fromCharCode(data[i]);
+  // }
+  // console.log('>>' + value + '<<');
+  let id = data[0];
+  let value = (data[1] << 24 | data[2] << 16 | data[3] << 8 | data[4]) / 100.0;
+  // console.log(id + ' -> ' + value);
+  switch (id) {
+    case 0:
+      sensors.humidity = value;
+      break;
+    case 1:
+      sensors.temperature = value;
+      break;
+    case 2:
+      sensors.pmat25 = value;
+      break;
+    case 3:
+      sensors.ppm = value;
+      break;
+  }
+});
+
