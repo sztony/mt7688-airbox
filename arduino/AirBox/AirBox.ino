@@ -11,16 +11,16 @@
 #include "DHT.h"
 
 // TFT
-#define TFT_RST 8
-#define TFT_DC 9
-#define TFT_CS 10
-#define TFT_MOSI 11
-#define TFT_MISO 12
-#define TFT_CLK 13
+#define TFT_RST 2
+#define TFT_DC 3
+#define TFT_CS 4
+#define TFT_MOSI 5
+#define TFT_MISO 6
+#define TFT_CLK 7
 
 // DHT22
 #define DHTTYPE DHT22
-#define DHTPIN 7
+#define DHTPIN 16
 
 // G3
 #define G3_RX 14
@@ -28,6 +28,14 @@
 
 // MQ9
 #define MQ9PIN 23
+
+// Speech
+#define SPEECH_RX 8
+#define SPEECH_TX 9
+
+// Speech and PM2.5 cannot turn on at the same time.
+// Set to 1 to turn on Speech and PM2.5 will be disaled.
+#define SPEECH_FLAG 1
 
 // TFT
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_MOSI, TFT_CLK, TFT_RST, TFT_MISO);
@@ -64,10 +72,44 @@ float ppm;
 //   actual value * 100
 byte packet[5];
 
+// Speech
+SoftwareSerial Speech(SPEECH_RX, SPEECH_TX);
+const char *voiceBuffer[] = {
+    "Turn on the light",
+    "Turn off the light",
+    "Play music",
+    "Pause",
+    "Next",
+    "Previous",
+    "Up",
+    "Down",
+    "Turn on the TV",
+    "Turn off the TV",
+    "Increase temperature",
+    "Decrease temperature",
+    "What's the time",
+    "Open the door",
+    "Close the door",
+    "Left",
+    "Right",
+    "Stop",
+    "Start",
+    "Mode 1",
+    "Mode 2",
+    "Go",
+};
+char cmd;
+
 void setup() {
   tft.begin();
   dht.begin();
   G3.begin(9600);
+
+  // Speech
+  if (SPEECH_FLAG) {
+    Speech.begin(9600);
+    Speech.listen();
+  }
 
   // Debug Serial
   Serial.begin(9600);
@@ -116,7 +158,18 @@ void loop() {
   showText(10, 250, "LPG", ppm, "ppm");
   sendValue(0x03, ppm);
 
-  delay(5000);
+  // Speech
+  if (SPEECH_FLAG) {
+    if (Speech.available()) {
+      cmd = Speech.read();
+      Serial.println("*********************************");
+      Serial.println(voiceBuffer[cmd - 1]);
+      Serial.println("*********************************");
+      sendValue(0x04, cmd);
+    }
+  }
+
+  //delay(5000);
 }
 
 void showText(int x, int y, char* caption, float value, char* unit) {

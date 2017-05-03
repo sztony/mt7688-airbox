@@ -173,16 +173,13 @@ class App extends Component {
       <div className="App">
         <div className="App-header">
           <img src={logo} className="App-logo" alt="logo" />
-          <h2>Welcome to React</h2>
+          <h2>Air Box</h2>
         </div>
-        <p className="App-intro">
-          To get started, edit <code>src/App.js</code> and save to reload.
-        </p>
         
-        <div>Humidity: {humidity} %</div>
-        <div>Temperature: {temperature} &deg;C</div>
-        <div>PM2.5: {pmat25} ug/m3</div>
-        <div>Liquefied Petroleum Gas: {ppm} ppm</div>
+        <h1>Humidity: {humidity} %</h1>
+        <h1>Temperature: {temperature} &deg;C</h1>
+        <h1>PM2.5: {pmat25} ug/m3</h1>
+        <h1>Liquefied Petroleum Gas: {ppm} ppm</h1>
 
         <hr />
         {air}

@@ -14,6 +14,7 @@ const HTTP_PORT = 8080;
 
 // Import libraries
 const http = require('http');
+const https = require("https");
 const url = require('url');
 const SerialPort = require("serialport").SerialPort;
 
@@ -25,28 +26,6 @@ let sensors = {
   "pmat25": undefined,
   "ppm": undefined
 };
-
-// settings
-let settings = {
-  "air_conditioner_addr": "http://192.168.1.116:8080",
-  "dehumidifier_addr": undefined
-};
-
-// high low rule settings
-let highLowRules = [
-  {
-    "sensor": "temperature",
-    "high_value": 28,
-    "low_value": 24,
-    "target": "air_conditioner_addr"
-  },
-  {
-    "sensor": "humidity",
-    "high_value": 65,
-    "low_value": 55,
-    "target": "dehumidifier_addr"
-  }
-];
 
 ////////////////////////////////////////////////////////////////////////////////
 // open serial port to MCU
@@ -152,7 +131,7 @@ serial.on('open', (err) => {
   console.log('serial port opened.');
 
   // Listen http port.
-  server.listen(HTTP_PORT, function(){
+  server.listen(HTTP_PORT, () => {
     console.log("%s HTTP Server listening on %s", new Date(), HTTP_PORT);
   });
 });
@@ -160,28 +139,64 @@ serial.on('open', (err) => {
 ////////////////////////////////////////////////////////////////////////////////
 // process the response from MCU
 serial.on('data', (data) => {
-  
-  // let value = '';
-  // for (let i = 0; i < data.length; i++) {
-  //   value += String.fromCharCode(data[i]);
-  // }
-  // console.log('>>' + value + '<<');
   let id = data[0];
   let value = (data[1] << 24 | data[2] << 16 | data[3] << 8 | data[4]) / 100.0;
-  // console.log(id + ' -> ' + value);
+  console.log(id + ' -> ' + value);
   switch (id) {
     case 0:
       sensors.humidity = value;
+      post_mcs_cloud("humidity", value);
       break;
     case 1:
       sensors.temperature = value;
+      post_mcs_cloud("temperature", value);
       break;
     case 2:
       sensors.pmat25 = value;
+      post_mcs_cloud("pmat25", value);
       break;
     case 3:
       sensors.ppm = value;
+      post_mcs_cloud("ppm", value);
+      break;
+    case 4:
+      console.log("command = " + value);
       break;
   }
 });
 
+////////////////////////////////////////////////////////////////////////////////
+let post_mcs_cloud = (channelId, channelValue) => {
+  let data = {
+    "datapoints": [
+      {"dataChnId": channelId, "values": {"value": channelValue}}
+    ]
+  };
+
+  let options = {
+    host: "api.mediatek.com",
+    port: 443,
+    path: "/mcs/v2/devices/DgnnBIRM/datapoints",
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "deviceKey": "pL00OZpxxGZkH0Tw"
+    }
+  };
+
+  let req = https.request(options, (res) => {
+    // console.log('STATUS: ' + res.statusCode);
+    // console.log('HEADERS: ' + JSON.stringify(res.headers));
+    res.setEncoding('utf8');
+    res.on('data', function (chunk) {
+      console.log('BODY: ' + chunk);
+    });
+  });
+
+  req.on('error', (e) => {
+    console.log('problem with request: ' + e.message);
+  });
+
+  req.write(JSON.stringify(data));
+  req.end();
+}
